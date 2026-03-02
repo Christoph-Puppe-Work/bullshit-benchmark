@@ -103,6 +103,12 @@ Use this when you already have run outputs and only want to refresh a viewer dat
   --output-dir <data/latest-or-data/v2/latest>
 ```
 
+Publish behavior:
+
+- Default `--publish-mode auto` is safety-first: if output already exists, publish is supplemental (merge by `sample_id`); if output does not exist, publish is replace.
+- To force merge: add `--supplemental` (or `--publish-mode supplemental`).
+- To intentionally overwrite with only incoming artifacts: add `--replace` (or `--publish-mode replace`).
+
 The publish step strips local-machine path fields from public artifacts.
 It also sanitizes local path fragments from published JSONL text fields.
 

@@ -168,6 +168,20 @@
     "collected_at_utc": "2026-02-27T09:56:46Z"
   },
   {
+    "model_id": "openai/gpt-5.2-chat",
+    "org": "openai",
+    "proposed_launch_date": "2025-12-10",
+    "evidence_url": "https://openai.com/index/introducing-gpt-5-2/",
+    "evidence_domain": "openai.com",
+    "evidence_title": "Introducing GPT-5.2 | OpenAI",
+    "evidence_published_date": "2025-12-10",
+    "evidence_type": "announcement_blog_post",
+    "supporting_snippet": "OpenAI launch post introduces GPT-5.2 and chat variant availability.",
+    "notes": "Added as requested so gpt-5.2-chat has an explicit launch-date record for benchmark analyses.",
+    "collector_agent": "collector_openai",
+    "collected_at_utc": "2026-03-02T16:20:00Z"
+  },
+  {
     "model_id": "openai/gpt-5.2-codex",
     "org": "openai",
     "proposed_launch_date": "2025-12-18",

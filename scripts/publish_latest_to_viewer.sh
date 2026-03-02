@@ -10,7 +10,8 @@ Usage:
     --panel-summary <path/to/panel_summary.json> \
     --aggregate-summary <path/to/aggregate_summary.json> \
     --aggregate-rows <path/to/aggregate.jsonl> \
-    [--output-dir data/latest]
+    [--output-dir data/latest] \
+    [--publish-mode auto|supplemental|replace]
 
 Copies the selected run artifacts into a stable viewer dataset directory:
   responses.jsonl
@@ -22,6 +23,11 @@ Copies the selected run artifacts into a stable viewer dataset directory:
   leaderboard_with_launch.csv
   model_launch_dates.csv
   manifest.json
+
+Publish modes:
+  auto (default): supplemental merge when output dataset already exists, else replace.
+  supplemental: merge by sample_id into existing dataset (safe default behavior).
+  replace: overwrite dataset with only the incoming run artifacts.
 EOF
 }
 
@@ -34,6 +40,7 @@ COLLECTION_STATS_FILE=""
 PANEL_SUMMARY_FILE=""
 AGGREGATE_SUMMARY_FILE=""
 AGGREGATE_ROWS_FILE=""
+PUBLISH_MODE="auto"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -61,6 +68,18 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_DIR="${2:-}"
       shift 2
       ;;
+    --publish-mode)
+      PUBLISH_MODE="${2:-}"
+      shift 2
+      ;;
+    --supplemental)
+      PUBLISH_MODE="supplemental"
+      shift
+      ;;
+    --replace)
+      PUBLISH_MODE="replace"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -72,6 +91,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "${PUBLISH_MODE}" in
+  auto|supplemental|replace) ;;
+  *)
+    echo "Invalid --publish-mode: ${PUBLISH_MODE} (expected auto|supplemental|replace)" >&2
+    exit 2
+    ;;
+esac
 
 required=(
   "${RESPONSES_FILE}"
@@ -102,92 +129,49 @@ for file in \
 done
 
 mkdir -p "${OUTPUT_DIR}"
-
-copy_file() {
-  local source_file="$1"
-  local target_file="$2"
-  if [[ -e "${target_file}" ]]; then
-    local same_file
-    same_file="$(
-      python3 - <<'PY' "${source_file}" "${target_file}"
-import os
-import sys
-
-source_path = sys.argv[1]
-target_path = sys.argv[2]
-try:
-    print("1" if os.path.samefile(source_path, target_path) else "0")
-except FileNotFoundError:
-    print("0")
-PY
-    )"
-    if [[ "${same_file}" == "1" ]]; then
-      return
-    fi
-  fi
-  cp "${source_file}" "${target_file}"
-}
-
-copy_file "${RESPONSES_FILE}" "${OUTPUT_DIR}/responses.jsonl"
-copy_file "${COLLECTION_STATS_FILE}" "${OUTPUT_DIR}/collection_stats.json"
-copy_file "${PANEL_SUMMARY_FILE}" "${OUTPUT_DIR}/panel_summary.json"
-copy_file "${AGGREGATE_SUMMARY_FILE}" "${OUTPUT_DIR}/aggregate_summary.json"
-copy_file "${AGGREGATE_ROWS_FILE}" "${OUTPUT_DIR}/aggregate.jsonl"
-
 MODEL_LAUNCH_CANONICAL="${ROOT_DIR}/data/model_metadata/model_launch_dates.csv"
 MODEL_LAUNCH_HEADERS="model_id,org,launch_date,evidence_url,evidence_title,evidence_published_date,evidence_type,judge_status,notes,updated_at_utc"
-if [[ -f "${MODEL_LAUNCH_CANONICAL}" ]]; then
-  copy_file "${MODEL_LAUNCH_CANONICAL}" "${OUTPUT_DIR}/model_launch_dates.csv"
-else
-  printf '%s\n' "${MODEL_LAUNCH_HEADERS}" > "${OUTPUT_DIR}/model_launch_dates.csv"
-fi
 
-python3 - <<'PY' "${OUTPUT_DIR}/panel_summary.json"
-import json
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text(encoding="utf-8"))
-
-def scrub(value):
-    if isinstance(value, dict):
-        out = {}
-        for key, item in value.items():
-            key_text = str(key)
-            if key_text.endswith("_dir") or key_text.endswith("_dirs"):
-                continue
-            scrubbed = scrub(item)
-            if scrubbed is None:
-                continue
-            out[key] = scrubbed
-        return out
-    if isinstance(value, list):
-        out = []
-        for item in value:
-            scrubbed = scrub(item)
-            if scrubbed is None:
-                continue
-            out.append(scrubbed)
-        return out
-    if isinstance(value, str) and "/Users/" in value:
-        return None
-    return value
-
-data = scrub(data)
-path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-PY
-
-python3 - <<'PY' "${OUTPUT_DIR}/responses.jsonl" "${OUTPUT_DIR}/aggregate.jsonl"
+python3 - <<'PY' \
+  "${ROOT_DIR}" \
+  "${OUTPUT_DIR}" \
+  "${RESPONSES_FILE}" \
+  "${COLLECTION_STATS_FILE}" \
+  "${PANEL_SUMMARY_FILE}" \
+  "${AGGREGATE_SUMMARY_FILE}" \
+  "${AGGREGATE_ROWS_FILE}" \
+  "${PUBLISH_MODE}" \
+  "${MODEL_LAUNCH_CANONICAL}" \
+  "${MODEL_LAUNCH_HEADERS}"
+import datetime as dt
+import importlib.util
 import json
 import pathlib
 import re
 import sys
 
-PATH_PATTERN = re.compile(r"/Users/[^\s\"|]+")
+root_dir = pathlib.Path(sys.argv[1]).resolve()
+output_dir = pathlib.Path(sys.argv[2]).resolve()
+responses_in = pathlib.Path(sys.argv[3]).resolve()
+collection_stats_in = pathlib.Path(sys.argv[4]).resolve()
+panel_summary_in = pathlib.Path(sys.argv[5]).resolve()
+aggregate_summary_in = pathlib.Path(sys.argv[6]).resolve()
+aggregate_rows_in = pathlib.Path(sys.argv[7]).resolve()
+requested_mode = str(sys.argv[8] or "auto").strip().lower()
+model_launch_canonical = pathlib.Path(sys.argv[9]).resolve()
+model_launch_headers = str(sys.argv[10] or "").strip()
+
+responses_out = output_dir / "responses.jsonl"
+aggregate_out = output_dir / "aggregate.jsonl"
+collection_stats_out = output_dir / "collection_stats.json"
+panel_summary_out = output_dir / "panel_summary.json"
+aggregate_summary_out = output_dir / "aggregate_summary.json"
+model_launch_out = output_dir / "model_launch_dates.csv"
+
+path_pattern = re.compile(r"/Users/[^\s\"|]+")
 
 def sanitize_string(value: str) -> str:
-    return PATH_PATTERN.sub("[local-path]", value)
+    return path_pattern.sub("[local-path]", value)
 
 def sanitize_value(value):
     if isinstance(value, dict):
@@ -202,6 +186,30 @@ def sanitize_value(value):
         return [sanitize_value(item) for item in value]
     if isinstance(value, str):
         return sanitize_string(value)
+    return value
+
+def scrub_panel(value):
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text.endswith("_dir") or key_text.endswith("_dirs"):
+                continue
+            scrubbed = scrub_panel(item)
+            if scrubbed is None:
+                continue
+            out[key] = scrubbed
+        return out
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            scrubbed = scrub_panel(item)
+            if scrubbed is None:
+                continue
+            out.append(scrubbed)
+        return out
+    if isinstance(value, str) and "/Users/" in value:
+        return None
     return value
 
 def normalize_row(row: dict):
@@ -267,15 +275,250 @@ def parse_json_objects(text: str):
             buf.append(ch)
     return rows
 
-for target in sys.argv[1:]:
-    path = pathlib.Path(target)
+def load_json(path: pathlib.Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+def load_jsonl(path: pathlib.Path):
+    if not path.exists():
+        return []
     text = path.read_text(encoding="utf-8")
-    rows = [normalize_row(sanitize_value(row)) for row in parse_json_objects(text)]
+    parsed = parse_json_objects(text)
+    return [normalize_row(sanitize_value(row)) for row in parsed]
+
+def write_json(path: pathlib.Path, payload):
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+def write_jsonl(path: pathlib.Path, rows):
     path.write_text(
         "".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows),
         encoding="utf-8",
     )
 
+def merge_by_sample_id(existing_rows, incoming_rows):
+    merged = []
+    index = {}
+    for row in existing_rows:
+        sample_id = str(row.get("sample_id", "")).strip()
+        if sample_id and sample_id in index:
+            merged[index[sample_id]] = row
+            continue
+        if sample_id:
+            index[sample_id] = len(merged)
+        merged.append(row)
+
+    added = 0
+    replaced = 0
+    for row in incoming_rows:
+        sample_id = str(row.get("sample_id", "")).strip()
+        if sample_id and sample_id in index:
+            merged[index[sample_id]] = row
+            replaced += 1
+            continue
+        if sample_id:
+            index[sample_id] = len(merged)
+        merged.append(row)
+        added += 1
+    return merged, added, replaced
+
+def disagreement_count(rows):
+    count = 0
+    for row in rows:
+        if row.get("judge_1_error") or row.get("judge_2_error"):
+            continue
+        score_1 = row.get("judge_1_score")
+        score_2 = row.get("judge_2_score")
+        if isinstance(score_1, int) and isinstance(score_2, int) and score_1 != score_2:
+            count += 1
+    return count
+
+def load_stats_if_exists(path: pathlib.Path):
+    if path.exists():
+        try:
+            return load_json(path)
+        except Exception:
+            return {}
+    return {}
+
+existing_dataset_present = responses_out.exists() and aggregate_out.exists()
+if requested_mode == "auto":
+    mode = "supplemental" if existing_dataset_present else "replace"
+else:
+    mode = requested_mode
+
+incoming_responses = load_jsonl(responses_in)
+incoming_aggregate_rows = load_jsonl(aggregate_rows_in)
+
+if mode == "supplemental":
+    existing_responses = load_jsonl(responses_out)
+    existing_aggregate_rows = load_jsonl(aggregate_out)
+    merged_responses, responses_added, responses_replaced = merge_by_sample_id(
+        existing_responses, incoming_responses
+    )
+    merged_aggregate_rows, aggregate_added, aggregate_replaced = merge_by_sample_id(
+        existing_aggregate_rows, incoming_aggregate_rows
+    )
+else:
+    merged_responses = incoming_responses
+    merged_aggregate_rows = incoming_aggregate_rows
+    responses_added = len(incoming_responses)
+    responses_replaced = 0
+    aggregate_added = len(incoming_aggregate_rows)
+    aggregate_replaced = 0
+
+spec = importlib.util.spec_from_file_location(
+    "openrouter_benchmark", root_dir / "scripts" / "openrouter_benchmark.py"
+)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+for row in merged_responses:
+    module.enrich_collect_record_metrics(row)
+
+incoming_collection_stats = load_json(collection_stats_in)
+existing_collection_stats = (
+    load_stats_if_exists(collection_stats_out) if mode == "supplemental" else {}
+)
+
+attempt_values = []
+for row in merged_responses:
+    try:
+        attempt_values.append(int(row.get("collect_attempt") or 0))
+    except Exception:
+        continue
+
+if mode == "replace":
+    elapsed_seconds = round(float(incoming_collection_stats.get("elapsed_seconds", 0) or 0), 3)
+    attempt_count = int(incoming_collection_stats.get("attempt_count", 0) or 0)
+    rate_limit_requeue_count = int(
+        incoming_collection_stats.get("rate_limit_requeue_count", 0) or 0
+    )
+    final_rate_limit_error_count = int(
+        incoming_collection_stats.get("final_rate_limit_error_count", 0) or 0
+    )
+elif responses_added > 0:
+    elapsed_seconds = round(
+        float(existing_collection_stats.get("elapsed_seconds", 0) or 0)
+        + float(incoming_collection_stats.get("elapsed_seconds", 0) or 0),
+        3,
+    )
+    attempt_count = int(existing_collection_stats.get("attempt_count", 0) or 0) + int(
+        incoming_collection_stats.get("attempt_count", 0) or 0
+    )
+    rate_limit_requeue_count = int(
+        existing_collection_stats.get("rate_limit_requeue_count", 0) or 0
+    ) + int(incoming_collection_stats.get("rate_limit_requeue_count", 0) or 0)
+    final_rate_limit_error_count = int(
+        existing_collection_stats.get("final_rate_limit_error_count", 0) or 0
+    ) + int(incoming_collection_stats.get("final_rate_limit_error_count", 0) or 0)
+else:
+    elapsed_seconds = round(float(existing_collection_stats.get("elapsed_seconds", 0) or 0), 3)
+    attempt_count = int(existing_collection_stats.get("attempt_count", 0) or 0)
+    rate_limit_requeue_count = int(
+        existing_collection_stats.get("rate_limit_requeue_count", 0) or 0
+    )
+    final_rate_limit_error_count = int(
+        existing_collection_stats.get("final_rate_limit_error_count", 0) or 0
+    )
+
+collection_stats = {
+    "elapsed_seconds": elapsed_seconds,
+    "total_records": len(merged_responses),
+    "error_count": sum(1 for row in merged_responses if row.get("error")),
+    "success_count": sum(1 for row in merged_responses if not row.get("error")),
+    "attempt_count": attempt_count,
+    "max_attempt_observed": max(
+        attempt_values
+        or [
+            int(existing_collection_stats.get("max_attempt_observed", 0) or 0),
+            int(incoming_collection_stats.get("max_attempt_observed", 0) or 0),
+        ]
+    ),
+    "rate_limit_requeue_count": rate_limit_requeue_count,
+    "final_rate_limit_error_count": final_rate_limit_error_count,
+    "resumed": False,
+    "checkpoint_rows_at_start": 0,
+    "new_rows_processed": int(responses_added),
+    "usage_summary": module.summarize_collect_usage(merged_responses),
+}
+
+incoming_panel_summary = scrub_panel(load_json(panel_summary_in))
+incoming_aggregate_summary = load_json(aggregate_summary_in)
+existing_panel_summary = (
+    scrub_panel(load_stats_if_exists(panel_summary_out)) if mode == "supplemental" else {}
+)
+
+panel_summary = incoming_panel_summary if mode == "replace" or not existing_panel_summary else existing_panel_summary
+panel_summary = dict(panel_summary)
+panel_summary["timestamp_utc"] = dt.datetime.now(dt.UTC).isoformat()
+panel_summary["publish_mode"] = mode
+panel_summary["disagreement_count"] = disagreement_count(merged_aggregate_rows)
+panel_summary["disagreement_rate"] = round(
+    panel_summary["disagreement_count"] / max(1, len(merged_aggregate_rows)), 4
+)
+if "grade_dirs_for_aggregate" in panel_summary:
+    panel_summary["grade_dirs_for_aggregate"] = []
+
+incoming_panel_id = str(incoming_panel_summary.get("panel_id", "")).strip()
+if mode == "supplemental":
+    current_panel_id = str(panel_summary.get("panel_id", "")).strip()
+    if incoming_panel_id and incoming_panel_id != current_panel_id:
+        source_panels = panel_summary.get("source_panels")
+        if isinstance(source_panels, list):
+            if incoming_panel_id not in source_panels:
+                source_panels.append(incoming_panel_id)
+        else:
+            merged_source_panels = []
+            if current_panel_id:
+                merged_source_panels.append(current_panel_id)
+            merged_source_panels.append(incoming_panel_id)
+            panel_summary["source_panels"] = merged_source_panels
+        if not str(panel_summary.get("execution_mode", "")).strip():
+            panel_summary["execution_mode"] = "supplemental_merge"
+        note = f"Supplemental publish appended panel {incoming_panel_id}."
+        existing_notes = str(panel_summary.get("notes", "")).strip()
+        if not existing_notes:
+            panel_summary["notes"] = note
+        elif note not in existing_notes:
+            panel_summary["notes"] = f"{existing_notes} {note}".strip()
+
+judge_models = panel_summary.get("judge_models")
+num_judges = (
+    len([m for m in judge_models if str(m).strip()]) if isinstance(judge_models, list) else 3
+)
+consensus_method = str(panel_summary.get("consensus_method", "")).strip() or str(
+    incoming_aggregate_summary.get("consensus_method", "") or "mean"
+)
+aggregate_summary = module.summarize_aggregate_rows(
+    merged_aggregate_rows,
+    consensus_method=consensus_method,
+    num_judges=max(1, num_judges),
+)
+
+write_jsonl(responses_out, merged_responses)
+write_json(collection_stats_out, collection_stats)
+write_json(panel_summary_out, panel_summary)
+write_json(aggregate_summary_out, aggregate_summary)
+write_jsonl(aggregate_out, merged_aggregate_rows)
+
+if model_launch_canonical.exists():
+    model_launch_out.write_text(model_launch_canonical.read_text(encoding="utf-8"), encoding="utf-8")
+else:
+    model_launch_out.write_text(model_launch_headers + "\n", encoding="utf-8")
+
+print(
+    json.dumps(
+        {
+            "mode": mode,
+            "responses_added": responses_added,
+            "responses_replaced": responses_replaced,
+            "aggregate_added": aggregate_added,
+            "aggregate_replaced": aggregate_replaced,
+            "responses_rows": len(merged_responses),
+            "aggregate_rows": len(merged_aggregate_rows),
+        }
+    )
+)
 PY
 
 generated_at_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
