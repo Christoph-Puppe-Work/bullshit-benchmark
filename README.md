@@ -8,6 +8,17 @@ BullshitBench measures whether models detect nonsense, call it out clearly, and 
 - Public viewer (latest): https://petergpt.github.io/bullshit-benchmark/viewer/index.v2.html
 - Updated: 2026-03-02
 
+## v2 Changelog Highlights
+
+- `100` new nonsense questions in the v2 set.
+- Domain-specific question coverage across `5` domains: `software` (40), `finance` (15), `legal` (15), `medical` (15), `physics` (15).
+- New visualizations in the v2 viewer, including:
+  - Detection Rate by Model (stacked mix bars)
+  - Domain Landscape (overall vs domain detection mix)
+  - Detection Rate Over Time
+  - Do Newer Models Perform Better?
+  - Does Thinking Harder Help? (tokens/cost toggle)
+
 ## Viewer Walkthrough (v2)
 
 The screenshots below follow the same flow as `viewer/index.v2.html`, starting with the main chart.
@@ -18,19 +29,25 @@ Primary leaderboard-style view showing each model's green/amber/red split.
 
 ![BullshitBench v2 - Detection Rate by Model](docs/images/v2-detection-rate-by-model.png)
 
-### 2. Detection Rate Over Time
+### 2. Domain Landscape
+
+Detection mix by domain to compare overall performance vs each domain at a glance.
+
+![BullshitBench v2 - Domain Landscape](docs/images/v2-domain-landscape.png)
+
+### 3. Detection Rate Over Time
 
 Release-date trend view focused on Anthropic, OpenAI, and Google.
 
 ![BullshitBench v2 - Detection Rate Over Time](docs/images/v2-detection-rate-over-time.png)
 
-### 3. Do Newer Models Perform Better?
+### 4. Do Newer Models Perform Better?
 
 All-model scatter by release date vs. green rate.
 
 ![BullshitBench v2 - Do Newer Models Perform Better](docs/images/v2-do-newer-models-perform-better.png)
 
-### 4. Does Thinking Harder Help?
+### 5. Does Thinking Harder Help?
 
 Reasoning scatter (tokens/cost toggle in the viewer) vs. green rate.
 

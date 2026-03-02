@@ -4,6 +4,11 @@ All notable benchmark, data, and viewer changes are tracked in this file.
 
 ## [2.0.0] - 2026-03-01
 
+### Highlights
+- Added `100` new v2 nonsense questions.
+- Added domain-specific coverage across `5` domains: `software` (40), `finance` (15), `legal` (15), `medical` (15), `physics` (15).
+- Added new v2 visualizations (model detection mix, domain landscape, over-time trends, release-date scatter, and reasoning tokens/cost scatter).
+
 ### Added
 - New v2 question set in [questions.v2.json](questions.v2.json) with 100 prompts across 5 domain groups and 13 techniques.
 - New v2 config in [config.v2.json](config.v2.json) with high-throughput collection defaults and updated technique set.
