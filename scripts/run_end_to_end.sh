@@ -19,6 +19,8 @@ Options:
                         Viewer dataset output dir (default: data/latest)
   --run-id <id>         Explicit run id (default: auto timestamp)
   --panel-id <id>       Explicit panel id (default: <run-id>_panel)
+  --models <csv>        Comma-separated list of exact model IDs to run
+  --model-regex <re>    Filter models from config by Python regex
   --with-additional-judges
                         After primary judge, run grade-panel for remaining judges
   --skip-collect        Skip collect stage (requires existing responses file)
@@ -38,6 +40,8 @@ OUTPUT_DIR="runs"
 VIEWER_OUTPUT_DIR="data/latest"
 RUN_ID=""
 PANEL_ID=""
+MODELS=""
+MODEL_REGEX=""
 DRY_RUN=0
 SERVE=0
 PORT=8877
@@ -65,6 +69,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --panel-id)
       PANEL_ID="${2:-}"
+      shift 2
+      ;;
+    --models)
+      MODELS="${2:-}"
+      shift 2
+      ;;
+    --model-regex)
+      MODEL_REGEX="${2:-}"
       shift 2
       ;;
     --dry-run)
@@ -167,12 +179,41 @@ PY
 PRIMARY_GRADE_ID="${PANEL_ID}__judge1_${PRIMARY_GRADE_SLUG}"
 PRIMARY_GRADE_DIR="${PANEL_DIR}/grades/${PRIMARY_GRADE_ID}"
 
+if [[ -n "${MODEL_REGEX}" ]]; then
+  MODELS="$(
+    python3 - <<'PY' "${CONFIG_PATH}" "${MODEL_REGEX}"
+import json
+import re
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        config = json.load(f)
+    models = config.get("collect", {}).get("models", [])
+    pattern = re.compile(sys.argv[2])
+    matched = [m for m in models if pattern.search(m)]
+    print(",".join(matched))
+except Exception as e:
+    print(f"Error parsing config for models: {e}", file=sys.stderr)
+    sys.exit(1)
+PY
+  )" || exit 1
+  if [[ -z "${MODELS}" ]]; then
+    echo "Error: No models matched the regex '${MODEL_REGEX}' in ${CONFIG_PATH}" >&2
+    exit 1
+  fi
+  echo "==> Selected models via regex: ${MODELS}"
+fi
+
 collect_cmd=(
   python3 scripts/openrouter_benchmark.py collect
   --config "${CONFIG_PATH}"
   --output-dir "${OUTPUT_DIR}"
   --run-id "${RUN_ID}"
 )
+if [[ -n "${MODELS}" ]]; then
+  collect_cmd+=(--models "${MODELS}")
+fi
 if [[ "${DRY_RUN}" -eq 1 ]]; then
   collect_cmd+=(--dry-run)
 fi
