@@ -5,11 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/publish_latest_to_viewer.sh \
-    --responses-file <path/to/responses.jsonl> \
-    --collection-stats <path/to/collection_stats.json> \
-    --panel-summary <path/to/panel_summary.json> \
-    --aggregate-summary <path/to/aggregate_summary.json> \
-    --aggregate-rows <path/to/aggregate.jsonl> \
+    --run <path/to/run_dir> \
     [--output-dir data/latest] \
     [--publish-mode auto|supplemental|replace]
 
@@ -36,33 +32,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
 OUTPUT_DIR="data/latest"
-RESPONSES_FILE=""
-COLLECTION_STATS_FILE=""
-PANEL_SUMMARY_FILE=""
-AGGREGATE_SUMMARY_FILE=""
-AGGREGATE_ROWS_FILE=""
+RUN_DIR=""
 PUBLISH_MODE="auto"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --responses-file)
-      RESPONSES_FILE="${2:-}"
-      shift 2
-      ;;
-    --collection-stats)
-      COLLECTION_STATS_FILE="${2:-}"
-      shift 2
-      ;;
-    --panel-summary)
-      PANEL_SUMMARY_FILE="${2:-}"
-      shift 2
-      ;;
-    --aggregate-summary)
-      AGGREGATE_SUMMARY_FILE="${2:-}"
-      shift 2
-      ;;
-    --aggregate-rows)
-      AGGREGATE_ROWS_FILE="${2:-}"
+    --run)
+      RUN_DIR="${2:-}"
       shift 2
       ;;
     --output-dir)
@@ -101,21 +77,50 @@ case "${PUBLISH_MODE}" in
     ;;
 esac
 
-required=(
-  "${RESPONSES_FILE}"
-  "${COLLECTION_STATS_FILE}"
-  "${PANEL_SUMMARY_FILE}"
-  "${AGGREGATE_SUMMARY_FILE}"
-  "${AGGREGATE_ROWS_FILE}"
-)
+if [[ -z "${RUN_DIR}" ]]; then
+  echo "Missing required argument: --run" >&2
+  usage
+  exit 2
+fi
 
-for value in "${required[@]}"; do
-  if [[ -z "${value}" ]]; then
-    echo "Missing required arguments." >&2
-    usage
-    exit 2
-  fi
-done
+if [[ ! -d "${RUN_DIR}" ]]; then
+  echo "Run directory not found: ${RUN_DIR}" >&2
+  exit 1
+fi
+
+RESPONSES_FILE="${RUN_DIR}/responses.jsonl"
+COLLECTION_STATS_FILE="${RUN_DIR}/collection_stats.json"
+
+# Find the most recently modified panel summary
+PANEL_SUMMARY_FILE=$(ls -t "${RUN_DIR}"/grade_panels/*/panel_summary.json 2>/dev/null | head -n 1 || true)
+
+if [[ -z "${PANEL_SUMMARY_FILE}" || ! -f "${PANEL_SUMMARY_FILE}" ]]; then
+  echo "Could not find panel_summary.json in ${RUN_DIR}/grade_panels/" >&2
+  exit 1
+fi
+
+AGGREGATE_DIR="$(
+  python3 - <<'PY' "${PANEL_SUMMARY_FILE}"
+import json
+import pathlib
+import sys
+
+panel_summary_path = pathlib.Path(sys.argv[1])
+try:
+    payload = json.loads(panel_summary_path.read_text(encoding="utf-8"))
+    print(str(payload.get("aggregate_dir", "")).strip())
+except Exception:
+    print("")
+PY
+)"
+
+if [[ -z "${AGGREGATE_DIR}" || ! -d "${AGGREGATE_DIR}" ]]; then
+  echo "Valid aggregate_dir missing in ${PANEL_SUMMARY_FILE}" >&2
+  exit 1
+fi
+
+AGGREGATE_SUMMARY_FILE="${AGGREGATE_DIR}/aggregate_summary.json"
+AGGREGATE_ROWS_FILE="${AGGREGATE_DIR}/aggregate.jsonl"
 
 for file in \
   "${RESPONSES_FILE}" \
