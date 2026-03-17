@@ -221,30 +221,6 @@
       background: #fff;
       color: var(--ink);
     }
-    #repoUrlInput:hover {
-      border-color: rgba(232, 241, 236, 0.26);
-      background: rgba(255, 255, 255, 0.11);
-    }
-    #repoUrlInput:focus {
-      outline: none;
-      border-color: rgba(232, 241, 236, 0.28);
-      box-shadow: 0 0 0 2px rgba(232, 241, 236, 0.08);
-      background: rgba(255, 255, 255, 0.14);
-    }
-    #loadRepoBtn {
-      border-color: rgba(232, 241, 236, 0.18);
-      background: rgba(255, 255, 255, 0.08);
-      color: #f2f7f4;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    }
-    #loadRepoBtn:hover {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: rgba(232, 241, 236, 0.28);
-    }
-    #loadRepoBtn:focus-visible {
-      outline: 2px solid rgba(255, 255, 255, 0.36);
-      outline-offset: 2px;
-    }
     .hero-created {
       font-size: 0.8rem;
       color: #d9e9e2;
@@ -1258,11 +1234,6 @@
                 <option value="v1">V1 (Original)</option>
               </select>
             </label>
-            <label class="hero-version-inline" style="margin-left: 10px;" for="repoUrlInput">
-              <span style="position: static; clip: auto; width: auto; height: auto; margin: 0; padding: 0; overflow: visible; font-size: 0.85rem; color: #d8e8e1; font-weight: 600; margin-right: 6px;">Repo</span>
-              <input type="text" id="repoUrlInput" value="https://github.com/petergpt/bullshit-benchmark" style="width: 280px; padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(232, 241, 236, 0.18); background: rgba(255, 255, 255, 0.08); color: #f2f7f4; font-size: 0.82rem; outline: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); transition: background 140ms ease, border-color 140ms ease; min-height: 34px;" aria-label="GitHub Repository URL" placeholder="https://github.com/petergpt/bullshit-benchmark" spellcheck="false" autocomplete="off" />
-            </label>
-            <button type="button" id="loadRepoBtn" class="alt" style="margin-left: 8px; padding: 7px 12px; font-size: 0.82rem; min-height: 34px;">Load</button>
           </div>
           <p class="hero-subtitle" id="heroSubtitle">Compare benchmark results, failure patterns, and example responses across benchmark versions.</p>
         </div>
@@ -1545,9 +1516,9 @@ const BENCHMARK_CONFIGS = {
     loadingLabel: "v2",
     headingPrefix: "BullshitBench v2",
     titlePrefix: "BullshitBench",
-    questionsPaths: ["questions.v2.json"],
-    launchFallbackPath: "data/v2/latest/model_launch_dates.csv",
-    paramsFallbackPath: "data/v2/latest/model_params.csv",
+    questionsPaths: ["../questions.v2.json"],
+    launchFallbackPath: "../data/v2/latest/model_launch_dates.csv",
+    paramsFallbackPath: "../data/v2/latest/model_params.csv",
     embeddedDatasetKey: "BSB_V2_EMBED",
     embeddedLaunchKey: "BSB_V2_LAUNCH",
     showDomainGroup: true,
@@ -1556,7 +1527,7 @@ const BENCHMARK_CONFIGS = {
     dataSources: [
       {
         name: "Published v2 dataset",
-        basePath: "data/v2/latest",
+        basePath: "../data/v2/latest",
         supportsAggregate: true,
         supportsPanelSummary: true,
         supportsLaunchMetadata: true,
@@ -1572,9 +1543,9 @@ const BENCHMARK_CONFIGS = {
     loadingLabel: "v1",
     headingPrefix: "BullshitBench v1",
     titlePrefix: "BullshitBench",
-    questionsPaths: ["questions.json"],
-    launchFallbackPath: "data/latest/model_launch_dates.csv",
-    paramsFallbackPath: "data/latest/model_params.csv",
+    questionsPaths: ["../questions.json"],
+    launchFallbackPath: "../data/latest/model_launch_dates.csv",
+    paramsFallbackPath: "../data/latest/model_params.csv",
     embeddedDatasetKey: "",
     embeddedLaunchKey: "",
     showDomainGroup: false,
@@ -1583,7 +1554,7 @@ const BENCHMARK_CONFIGS = {
     dataSources: [
       {
         name: "Published v1 dataset",
-        basePath: "data/latest",
+        basePath: "../data/latest",
         supportsAggregate: true,
         supportsPanelSummary: true,
         supportsLaunchMetadata: true,
@@ -1591,29 +1562,6 @@ const BENCHMARK_CONFIGS = {
     ],
   },
 };
-
-function getRawGithubUrl(repoUrl, filePath) {
-  let url = repoUrl.trim();
-  if (url.endsWith('/')) {
-    url = url.slice(0, -1);
-  }
-  // Convert https://github.com/petergpt/bullshit-benchmark to https://raw.githubusercontent.com/petergpt/bullshit-benchmark/main/
-  if (url.includes('github.com')) {
-     const parts = url.split('github.com/');
-     if (parts.length > 1) {
-       const repoPath = parts[1];
-       // Assume main branch
-       return `https://raw.githubusercontent.com/${repoPath}/main/${filePath}`;
-     }
-  }
-  // Fallback to relative if not a github URL
-  return `../${filePath}`;
-}
-
-function getRepoUrl() {
-  const input = document.getElementById("repoUrlInput");
-  return input ? input.value : "https://github.com/petergpt/bullshit-benchmark";
-}
 
 const LOCAL_LAUNCH_OVERRIDES = [
   {
@@ -2308,13 +2256,11 @@ function fromResponseRow(row) {
 }
 
 async function loadQuestions(paths) {
-  const sourcePaths = Array.isArray(paths) && paths.length ? paths : ["questions.v2.json"];
-  const repoUrl = getRepoUrl();
+  const sourcePaths = Array.isArray(paths) && paths.length ? paths : ["../questions.v2.json"];
   const failures = [];
   for (const path of sourcePaths) {
     try {
-      const url = getRawGithubUrl(repoUrl, path);
-      return await fetchJsonRequired(url);
+      return await fetchJsonRequired(path);
     } catch (err) {
       failures.push(`${path}: ${err.message}`);
     }
@@ -2346,15 +2292,14 @@ function loadEmbeddedDataset(cfg) {
 }
 
 async function loadDatasetCandidate(source) {
-  const repoUrl = getRepoUrl();
-  const respText = await fetchTextRequired(getRawGithubUrl(repoUrl, `${source.basePath}/responses.jsonl`));
-  const stats = await fetchJsonRequired(getRawGithubUrl(repoUrl, `${source.basePath}/collection_stats.json`));
-  const aggText = source.supportsAggregate === false ? "" : await fetchTextOptional(getRawGithubUrl(repoUrl, `${source.basePath}/aggregate.jsonl`));
-  const panel = source.supportsPanelSummary === false ? null : await fetchJsonOptional(getRawGithubUrl(repoUrl, `${source.basePath}/panel_summary.json`));
-  const summary = source.supportsAggregate === false ? null : await fetchJsonOptional(getRawGithubUrl(repoUrl, `${source.basePath}/aggregate_summary.json`));
-  const launchText = source.supportsLaunchMetadata === false ? "" : await fetchTextOptional(getRawGithubUrl(repoUrl, `${source.basePath}/model_launch_dates.csv`));
-  const paramsText = source.supportsModelParams === false ? "" : await fetchTextOptional(getRawGithubUrl(repoUrl, `${source.basePath}/model_params.csv`));
-  const gradeText = source.gradePath ? await fetchTextOptional(getRawGithubUrl(repoUrl, source.gradePath)) : "";
+  const respText = await fetchTextRequired(`${source.basePath}/responses.jsonl`);
+  const stats = await fetchJsonRequired(`${source.basePath}/collection_stats.json`);
+  const aggText = source.supportsAggregate === false ? "" : await fetchTextOptional(`${source.basePath}/aggregate.jsonl`);
+  const panel = source.supportsPanelSummary === false ? null : await fetchJsonOptional(`${source.basePath}/panel_summary.json`);
+  const summary = source.supportsAggregate === false ? null : await fetchJsonOptional(`${source.basePath}/aggregate_summary.json`);
+  const launchText = source.supportsLaunchMetadata === false ? "" : await fetchTextOptional(`${source.basePath}/model_launch_dates.csv`);
+  const paramsText = source.supportsModelParams === false ? "" : await fetchTextOptional(`${source.basePath}/model_params.csv`);
+  const gradeText = source.gradePath ? await fetchTextOptional(source.gradePath) : "";
 
   const responses = parseJsonl(respText);
   let aggregateRows = aggText ? parseJsonl(aggText) : [];
@@ -2479,9 +2424,8 @@ async function loadData() {
     mergeLaunchRowsIntoMap(S.launchByModel, embeddedLaunch);
 
     let launchText = loaded.launchText || "";
-    const repoUrl = getRepoUrl();
     if (!launchText) {
-      launchText = await fetchTextOptional(getRawGithubUrl(repoUrl, cfg.launchFallbackPath));
+      launchText = await fetchTextOptional(cfg.launchFallbackPath);
     }
     if (launchText) {
       mergeLaunchRowsIntoMap(S.launchByModel, parseCsv(launchText));
@@ -2492,7 +2436,7 @@ async function loadData() {
     S.paramsByModel = new Map();
     let paramsText = loaded.paramsText || "";
     if (!paramsText) {
-      paramsText = await fetchTextOptional(getRawGithubUrl(repoUrl, cfg.paramsFallbackPath));
+      paramsText = await fetchTextOptional(cfg.paramsFallbackPath);
     }
     if (paramsText) {
       const paramsRows = parseCsv(paramsText);
@@ -4395,26 +4339,6 @@ function bindEvents() {
     versionSel.addEventListener("change", () => {
       const next = versionSel.value === "v1" ? "v1" : "v2";
       if (next !== S.benchmarkVersion) setBenchmarkInUrl(next);
-    });
-  }
-
-  const loadRepoBtn = document.getElementById("loadRepoBtn");
-  if (loadRepoBtn) {
-    loadRepoBtn.addEventListener("click", () => {
-      // Set state to initial
-      S.rows = []; S.filteredRows = []; S.responses = []; S.aggregateRows = [];
-      S.questionMap = new Map(); S.usageByModel = new Map(); S.paramsByModel = new Map();
-      loadData();
-    });
-  }
-  const repoUrlInput = document.getElementById("repoUrlInput");
-  if (repoUrlInput) {
-    repoUrlInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        S.rows = []; S.filteredRows = []; S.responses = []; S.aggregateRows = [];
-        S.questionMap = new Map(); S.usageByModel = new Map(); S.paramsByModel = new Map();
-        loadData();
-      }
     });
   }
 
